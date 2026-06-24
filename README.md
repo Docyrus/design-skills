@@ -23,6 +23,7 @@ npx skills add docyrus/design-skills --skill docyrus-data-grid-page-design
 |-------|--------------|
 | **docyrus-data-grid-page-design** | Build Docyrus React data-grid and record-list pages with `DataGrid`, `DataGridViewSelect`, `useDataGrid`, `useDocyrusDataViewSelect`, `useDocyrusDataGrid` — saved-view tabs, row actions, filtering, sorting, grouping, search, display modes, paging, and reload behavior. |
 | **docyrus-record-detail-form-design** | Build Docyrus React record forms, detail sheets, inspector panels, and inline-edit record UIs with `useDocyrusFormView`, `DynamicFormField`, `DynamicValue`, `EditableRecordDetail`, `EditableValue`, and value renderers. |
+| **docyrus-crm-like-detail-page-design** | Build CRM-style record detail pages — a two-pane layout (resizable inline-editable attribute panel + tabbed work area for activity, comments, files, tasks, related records) composing `EditableRecordDetail`, `RecordActivityPanel`, `FileAttachmentPanel`, `CommentsPanel`, `AvatarThumbnail`, and `DataGrid`. Ships a copyable layout-shell starter. |
 
 ## Layout
 

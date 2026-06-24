@@ -11,12 +11,15 @@ Build full Docyrus list pages around the web `DataGrid` stack.
 
 1. **Standard Docyrus page** → use `useDocyrusDataGrid`.
    - Best when rows come from a Docyrus data source or generated collection.
-   - Gives you metadata-driven columns, saved views, toolbar wiring, search, filters (with async option search for relation/user fields), grouping, sorting, row-height, display mode, paging, and reload.
-   - Auto-wires reference field expansion, tenant-aware formatters, and a shared users list when supplied.
-   - Built-in inline change tracking + save banner (`trackChanges`, `onSaveChanges`).
-   - Built-in selection-bar bulk actions (`bulkActions`: `update`, `delete`, `export`) with `BulkUpdateDialog` + `RecordDeleteConfirmDialog`.
+   - Gives you metadata-driven columns, saved views, toolbar wiring, search, filters (with async option search for relation/user fields), grouping, sorting, row-height, display mode, fields visibility menu, paging, and reload.
+   - Auto-wires reference field expansion, tenant-aware formatters (read from `<DocyrusTenantProvider>` context automatically), and a shared users list when supplied.
+   - Built-in inline change tracking + save banner (`trackChanges`, `onSaveChanges`) plus optional inline add-row (`onRowAdd`).
+   - Built-in selection-bar bulk actions (`bulkActions`: `update`, `delete`, `export`) with `BulkUpdateDialog` + `RecordDeleteConfirmDialog`, extendable via `extraBulkActions`.
    - Built-in server-side export menu (`enableServerExportMenu`, `exportColumns`, `exportFileName`, `serverExportLimit`).
-   - Read `references/hook-pages.md`.
+   - Built-in pivot filter strips (`pivotFilters`) and an optional side-panel filter rail (`enableSideFilters` + `sideFiltersConfig`).
+   - Relation-cell navigation (`getRelationHref` / `onOpenRelation` / `relationIconFields`), conditional row/cell color rules (`rowColorRules` / `cellColorRules`), and a `excludeFieldSlugs` escape hatch for stale backend metadata.
+   - A companion `formViewProps` payload to spread straight into `useDocyrusFormView` for the active view's bound record form.
+   - Read `references/hook-pages.md` for the core surface and `references/advanced-grid-features.md` for pivot/side filters, relation navigation, color rules, inline add-row, and the escape hatch.
 
 2. **Custom layout or custom row-query lifecycle** → use `useDocyrusDataViewSelect` + `useDataGrid`.
    - Best when you need a custom toolbar arrangement, local/demo data, or a non-standard fetch cycle.
@@ -27,16 +30,17 @@ Build full Docyrus list pages around the web `DataGrid` stack.
 
 4. **Complex Docyrus query payloads** → also load the `docyrus-api-dev` skill.
 5. **Advanced saved-view persistence or manual view-driven queries** → read `references/advanced-saved-view-query-patterns.md`.
-6. **Tenant-aware formatters and shared users list** → read `references/tenant-and-users-providers.md`.
+6. **Advanced grid features (pivot filters, side filters, relation navigation, color rules, inline add, companion form)** → read `references/advanced-grid-features.md`.
+7. **Tenant-aware formatters and shared users list** → read `references/tenant-and-users-providers.md`.
 
 ## Default page workflow
 
 1. Confirm the `appSlug`, `dataSourceSlug`, and whether a generated collection already exists.
 2. Pick hook mode or manual mode.
-3. App-level: ensure a `TenantProvider` (preferences → date/number utils) and `UsersProvider` (`/v1/users` cache) wrap the route, and pull `formatDate` / `formatDateTime` / `formatNumber` / `users` into the grid hook from those contexts.
+3. App-level: mount `<DocyrusTenantProvider client={...} enabled={authReady} userTimezone={tz}>` once near the root so date/datetime/number cells format with the tenant's regional settings automatically — the grid hook reads `useDateFormat()` / `useNumberFormat()` from that context with no per-page formatter props. Also wire a `UsersProvider` (`/v1/users` cache) and pass `users` into the grid hook for instant avatar + label rendering on user cells.
 4. Add reserved columns in this order: select first, actions second. They are pinned left automatically by `useDocyrusDataGrid`.
 5. Keep the page in a flex column layout with the grid body wrapped in `min-h-0 flex-1`.
-6. Add create/edit/view/delete dialogs around row actions.
+6. Add create/edit/view/delete dialogs around row actions (e.g. `RecordFormDialog` + `RecordDeleteConfirmDialog`), and an import flow via `useDocyrusDataImportWizard` when needed.
 7. Verify initial saved view, search, filters, grouping, sorting, paging, and reload behavior.
 
 ## Non-negotiables
@@ -50,12 +54,14 @@ Build full Docyrus list pages around the web `DataGrid` stack.
 - Manual pages must apply the initial active view with `applyViewToTable(table, activeView)` after views and columns are ready. User-triggered view switches through `DataGridViewSelect` are applied automatically.
 - Prefer `useDocyrusDataGrid` unless you truly need custom row fetching or custom toolbar composition. The hook handles auto-expand, async filter options, formatters, and reserved-column pinning for you.
 - When you wire manual view CRUD into `DataGridViewSelect`, pass `isSaving` and `isLoading` so the editor UX stays correct during saves and background fetches.
-- For tenant-aware date/datetime/number formatting, fetch `getTenantPreferences(client)` once at app boot and pass the resulting `formatDate` / `formatDateTime` / `formatNumber` callbacks into `useDocyrusDataGrid`.
+- For tenant-aware date/datetime/number formatting, mount `<DocyrusTenantProvider>` once near the app root. The grid hook auto-reads the formatters from `useDateFormat()` / `useNumberFormat()` context — **do not** hand-wire `formatDate` / `formatDateTime` / `formatNumber` props per page unless you need to override the provider for one grid. (The legacy manual `getTenantPreferences` + per-page formatter props still work and remain a valid fallback for apps that haven't adopted the provider.)
 - For instant avatar + label rendering on user-typed cells, fetch `/v1/users` once at app boot and pass the resulting `CellUserOption[]` into `useDocyrusDataGrid` via the `users` option.
+- When the backend metadata advertises a field the underlying DB no longer has (items endpoint 500s with `column "X" does not exist`), drop it via `excludeFieldSlugs` as a temporary escape hatch — prefer fixing the backend metadata.
 
 ## References
 
 - `references/hook-pages.md` — one-call Docyrus grid pages with direct API mode, collection mode, extension points, formatters, and shared-users wiring.
+- `references/advanced-grid-features.md` — pivot filter strips, side-panel filter rail, relation-cell navigation + relation icons, conditional row/cell color rules, inline add-row, the `excludeFieldSlugs` escape hatch, the companion `formViewProps`, reactive selection, and the import-wizard + record-dialog page pattern.
 - `references/manual-pages.md` — local/manual grid composition, local views, backend view-select wiring, and initial-view handling.
 - `references/advanced-saved-view-query-patterns.md` — saved-view persistence, system views, hidden views, paging ownership, and translating active views into manual server queries.
-- `references/tenant-and-users-providers.md` — app-level providers for tenant preferences and the shared users list, plus how to plug them into `useDocyrusDataGrid`.
+- `references/tenant-and-users-providers.md` — app-level providers for tenant preferences (`<DocyrusTenantProvider>`) and the shared users list, plus how they auto-wire into `useDocyrusDataGrid`.

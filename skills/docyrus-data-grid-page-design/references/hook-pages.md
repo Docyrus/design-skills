@@ -46,17 +46,15 @@ function OrganizationsPageInner({ client }: { client: NonNullable<ReturnType<typ
   );
 
   const { users } = useUsers();
-  const { formatDate, formatDateTime, formatNumber } = useGridFormatters();
 
+  // Date / datetime / number formatters are read automatically from
+  // <DocyrusTenantProvider> context — no formatter props needed here.
   const { table, gridProps, toolbar, resolvedListParams } = useDocyrusDataGrid<OrganizationRow>({
     client,
     appSlug: 'crm',
     dataSourceSlug: 'organization',
     actionsColumn,
     users,
-    formatDate,
-    formatDateTime,
-    formatNumber,
     listParams: { limit: 50 },
     defaultRowGroupingColumn: 'status'
   });
@@ -118,7 +116,7 @@ Use `onReload` when you use `data` mode, because the hook cannot refetch rows on
 - `systemViews`: add static developer-defined views before saved backend views.
 - `viewSelectVariant` (default `'horizontal-tabs'`): view picker layout. `'dropdown'` → compact `<Select>`-style trigger for tight toolbars. `'vertical-tabs'` → moves the picker out of the toolbar into a side panel (see "Side panel" in **Hook result** below); the consumer renders `sidePanel` to the left of the grid.
 - `viewSelectMaxVisible?: number`: caps inline tabs in the `'horizontal-tabs'` variant; overflow collapses into the active view's overflow menu. Ignored for `'dropdown'` / `'vertical-tabs'`.
-- `enableViewSelect`, `enableSearchInput`, `enableFilterMenu`, `enableGroupMenu`, `enableSortMenu`, `enableRowHeightMenu`, `enableDisplayMenu`, `enableReloadButton`, `enableServerExportMenu`: trim the standard toolbar (all default `true`).
+- `enableViewSelect`, `enableSearchInput`, `enableFilterMenu`, `enableGroupMenu`, `enableSortMenu`, `enableRowHeightMenu`, `enableDisplayMenu`, `enableFieldsMenu`, `enableReloadButton`, `enableServerExportMenu`: trim the standard toolbar (all default `true`). `enableFieldsMenu` mounts a per-field visibility popover that drives both table columns and (in gallery display mode) card body fields.
 - `showSelectColumn` (default `true`), `enableRowMarkers` (default `true`): control the left-most reserved column.
 - `selectColumn`: override `getDataGridSelectColumn` entirely.
 - `searchPlaceholder` (default `"Search…"`), `searchDebounceMs` (default `300`), `toolbarClassName`.
@@ -163,11 +161,15 @@ Use `onReload` when you use `data` mode, because the hook cannot refetch rows on
 
 ### Tenant-aware formatters
 
+**Preferred:** mount `<DocyrusTenantProvider>` once near the app root. The hook then reads `useDateFormat()` / `useNumberFormat()` from context and wires `DateCell`, `DateTimeCell`, and the `NumberCell` family automatically — **no formatter props needed per page**. See `tenant-and-users-providers.md`.
+
+The explicit props below still exist and **win over context** when supplied. Use them only to override the provider for a single grid (or in apps that haven't adopted `<DocyrusTenantProvider>` yet):
+
 - `formatDate?: (value) => string` — wired into `DateCell` display.
 - `formatDateTime?: (value) => string` — wired into `DateTimeCell` display.
 - `formatNumber?: (value, opts?: { variant?: 'number' | 'currency' | 'percent'; currency?: string }) => string` — wired into `NumberCell` / `CurrencyCell` / `PercentCell` display.
 
-Build these from `@docyrus/app-utils` (`createDateUtils` + `createNumberUtils` over `getTenantPreferences`). See `tenant-and-users-providers.md` for the standard provider pattern.
+When set explicitly, build these from `@docyrus/app-utils` (`createDateUtils` + `createNumberUtils` over `getTenantPreferences`).
 
 ### Shared users list
 
@@ -237,14 +239,18 @@ Use `mapColumn` only when you need to override these defaults.
 `useDocyrusDataGrid<TData>` returns:
 
 - `table` — TanStack Table instance. Pass to `<DataGrid>` and any toolbar building blocks.
-- `gridProps` — spread onto `<DataGrid table={table} {...gridProps} />`. Includes `actions: Array<DataGridAction<TData>>` so the floating selection bar lights up automatically when `bulkActions` are enabled.
-- `toolbar` — pre-wired toolbar `ReactNode` ready to render above the grid.
+- `gridProps` — spread onto `<DataGrid table={table} {...gridProps} />`. Includes `actions: Array<DataGridAction<TData>>` so the floating selection bar lights up automatically when `bulkActions` are enabled, plus `isReloading` (true during a background refetch).
+- `toolbar` — pre-wired toolbar `ReactNode` ready to render above the grid. Pivot filter strips (when `pivotFilters` is set) stack at the top of this element automatically.
+- `selectedRows: Array<TData>` / `selectedRowCount: number` — **reactive** current selection. Reading these in a parent's render re-renders on selection change, so a page header can show a contextual bulk-action button without `useEffect`/ref glue.
+- `formViewProps: DocyrusDataGridFormViewProps` — spread into `useDocyrusFormView({ client, appSlug, dataSourceSlug, ...formViewProps })` to render the active view's bound record form (or a single-column fallback). Also exposes `activeViewFormId` / `activeViewForm`. See `advanced-grid-features.md`.
 - `sidePanel` — pre-wired side panel `ReactNode`. `null` for `'horizontal-tabs'` and `'dropdown'` view variants. When `viewSelectVariant === 'vertical-tabs'`, it returns a `<DataGridSidePanel>` containing the vertical view picker — render it to the left of `<DataGrid>` (e.g. inside a flex row).
+- `sideFilters` — pre-wired side-panel filter rail `ReactNode`. `null` when `enableSideFilters` is `false`. Render to the left of `<DataGrid>`. Paired with `sideFiltersExpanded` / `setSideFiltersExpanded` / `sideFiltersQuery`. See `advanced-grid-features.md`.
+- `pivotFiltersStrip` — the interactive `<DocyrusPivotFilterGroup>` element (same one the toolbar mounts), or `null`. `pivotFilterRule` is the current AND-combined rule (already merged into the query). See `advanced-grid-features.md`.
 - `items: Array<TData>` — resolved rows from `data`, `collection.list()`, or the direct items fetch.
 - `resolvedListParams: DocyrusDataGridListParams` — final params sent to the backend (after merging view state, search, and `listParams`). Use for export/analytics/copy-query.
 - `pagingMode: 'standard' | 'virtual-scroll' | undefined` — resolved paging mode for the active view. Pass to `<DataGrid pagingMode>` so the standard footer renders only when the view enables it.
 - `reload: () => void` — triggers `refetch()` (data source + views + items) and the optional `onReload` callback.
-- Plus everything from `useDocyrusDataViewSelect` except `gridViewSelectProps`: `views`, `fields`, `dataSource`, `activeViewId`, `setActiveViewId`, `isLoading`, `error`, `refetch`.
+- Plus everything from `useDocyrusDataViewSelect`: `views`, `fields`, `dataSource`, `activeViewId`, `setActiveViewId`, `isLoading`, `error`, `refetch`, and `gridViewSelectProps` (exposed so downstream composer hooks can render their own `DataGridViewSelect`).
 
 ## Important behavior
 

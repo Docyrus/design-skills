@@ -1,15 +1,41 @@
 # Tenant Preferences and Shared Users Providers
 
-`useDocyrusDataGrid` accepts two tenant-scoped inputs that should be sourced from app-level providers, not refetched per page:
+`useDocyrusDataGrid` consumes two tenant-scoped inputs that should be sourced from app-level providers, not refetched per page:
 
-- **Tenant preferences** → drives `formatDate`, `formatDateTime`, `formatNumber` so date and money cells respect regional settings.
+- **Tenant preferences** → drives date / datetime / number formatting so date and money cells respect regional settings.
 - **Shared users list** → seeds `field-userSelect` / `field-userMultiSelect` cell options so avatar + name render instantly without per-row fetches.
 
-Both should be fetched **once** at app boot and re-used everywhere.
+Both should be set up **once** at app boot and re-used everywhere.
 
-## Tenant preferences provider
+## Tenant preferences — preferred: `<DocyrusTenantProvider>`
 
-Source the utilities from `@docyrus/app-utils`:
+The package ships a built-in provider that fetches `/v1/tenant/preferences`, normalizes the envelope, and installs `<DateFormatProvider>` + `<NumberFormatProvider>` underneath. Mount it once near the app root:
+
+```tsx
+import { DocyrusTenantProvider } from '@docyrus/ui/library/hooks/use-docyrus-tenant';
+import { useDocyrusAuth } from '@docyrus/signin';
+
+function TenantBoundary({ children }: { children: React.ReactNode }) {
+  const { client, status, user } = useDocyrusAuth();
+
+  return (
+    <DocyrusTenantProvider
+      client={client}
+      enabled={status === 'authenticated'}
+      userTimezone={(user as { timeZone?: { id?: string } } | null)?.timeZone?.id}>
+      {children}
+    </DocyrusTenantProvider>
+  );
+}
+```
+
+With this mounted, **`useDocyrusDataGrid` auto-reads the formatters from context** (`useDateFormat()` / `useNumberFormat()`) and wires `DateCell` / `DateTimeCell` / `NumberCell` family automatically — you do **not** pass `formatDate` / `formatDateTime` / `formatNumber` props per page. Explicit props still win when you need to override the provider for one grid.
+
+`useDocyrusTenant()` is a read-only hook returning `{ preferences, dateUtils, numberUtils, isLoading }` for ad-hoc access (chart axes, custom headers, side panels). `normalizeTenantPreferences(envelope)` is exported standalone for apps building their own provider stack.
+
+## Tenant preferences — manual provider (legacy / custom)
+
+If you can't adopt `<DocyrusTenantProvider>` (e.g. you bridge tenant data into a pre-existing context), build the formatters yourself and pass them as explicit props. Source the utilities from `@docyrus/app-utils`:
 
 ```ts
 import {
@@ -230,49 +256,49 @@ The Docyrus `/v1/users` API returns `firstname` / `lastname` (lowercase, no sepa
 
 ## Wiring providers into the app shell
 
-Place the providers inside the auth + query providers and outside the routes:
+Place the providers inside the auth + query providers and outside the routes. Prefer the built-in `<DocyrusTenantProvider>`:
 
 ```tsx
 <AuthProvider>
   <QueryProvider>
     <DevtoolsProvider>
-      <TenantProvider>
+      <DocyrusTenantProvider client={client} enabled={authReady} userTimezone={tz}>
         <UsersProvider>
           <Routes>{/* ... */}</Routes>
         </UsersProvider>
-      </TenantProvider>
+      </DocyrusTenantProvider>
     </DevtoolsProvider>
   </QueryProvider>
 </AuthProvider>
 ```
 
+(Swap `<DocyrusTenantProvider>` for the manual `<TenantProvider>` above only if you can't adopt the built-in one.)
+
 Order matters:
 
 - `AuthProvider` must wrap both because the providers need an authenticated `client` to fetch.
 - `QueryProvider` must wrap both because they use `useQuery`.
-- `TenantProvider` and `UsersProvider` are siblings; either order is fine.
+- The tenant provider and `UsersProvider` are siblings; either order is fine.
 
 ## Wiring providers into a grid page
 
+With `<DocyrusTenantProvider>` mounted, the page only needs to pass `users` — the formatters resolve from context:
+
 ```tsx
 const { users } = useUsers();
-const { formatDate, formatDateTime, formatNumber } = useGridFormatters();
 
 const { table, gridProps, toolbar } = useDocyrusDataGrid<Row>({
   client,
   appSlug,
   dataSourceSlug,
   users,
-  formatDate,
-  formatDateTime,
-  formatNumber,
-  // ... other options
+  // ... other options — no formatter props needed
 });
 ```
 
 The grid hook routes:
 
-- `formatDate` / `formatDateTime` / `formatNumber` into TanStack `tableMeta`. `DateCell`, `DateTimeCell`, `NumberCell` (and its currency / percent variants) read these via `tableMeta?.formatDate` etc. and prefer them over their built-in fallbacks.
+- Date / number formatters from `useDateFormat()` / `useNumberFormat()` context into TanStack `tableMeta` automatically. `DateCell`, `DateTimeCell`, `NumberCell` (and its currency / percent variants) read these via `tableMeta?.formatDate` etc. Explicit `formatDate` / `formatDateTime` / `formatNumber` props still win when supplied (override-per-grid or no-provider apps).
 - `users` into the cell-options builder for `field-userSelect` and `field-userMultiSelect` columns. The cells render avatar + label from this list immediately. Rows pointing at users not in the list still render correctly via the expanded-payload fallback.
 
 ## Why centralize these
@@ -284,7 +310,7 @@ The grid hook routes:
 
 ## Debug checklist
 
-- **Dates / numbers showing as raw values?** Tenant query likely failed or hasn't resolved yet. Check `useTenant().isLoading` and the network tab for `getTenantPreferences`.
+- **Dates / numbers showing as raw values?** The tenant query likely failed or hasn't resolved, or no tenant provider is mounted. Check `useDocyrusTenant().isLoading` (or `useTenant().isLoading` for the manual provider) and the network tab for `/v1/tenant/preferences`. Without any provider the cells fall back to their own locale defaults, not tenant settings.
 - **User cells show "Unassigned" instead of names?** Either `users` wasn't passed in, or the row's user payload didn't expand. Verify `useDocyrusDataGrid` sees both the global `users` list (via context) and that the user column slug appears in `expand` (auto-added; check `resolvedListParams.expand`).
 - **Currency shows "1.234,50 USD" but you wanted "$1,234.50"?** Customize the `formatNumber` wrapper for that variant. The default is locale-formatted number + currency code suffix.
 - **Avatars missing?** The provider reads `photo` first, then `avatar_url` / `avatarUrl` / `profile_image_url` / `profileImageUrl`. Confirm the API returns one of those fields.
